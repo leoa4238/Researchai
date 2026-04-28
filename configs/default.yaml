@@ -1,0 +1,81 @@
+project:
+  name: jaywalking-risk-recognition
+  seed: 42
+
+paths:
+  raw_data_dir: data/raw
+  video_dir: data/videos
+  annotation_dir: data/annotations
+  processed_dir: data/processed
+  feature_dir: data/features
+  pose_model_dir: models/pose
+  segmentation_model_dir: models/segmentation
+  classifier_model_dir: models/classifiers
+  log_dir: outputs/logs
+  figure_dir: outputs/figures
+  result_dir: outputs/results
+  input_video: data/videos/sample.mp4
+  feature_csv: data/features/features.csv
+  dummy_feature_csv: data/features/dummy_features.csv
+
+video:
+  frame_stride: 5
+  max_frames: 100
+
+detection:
+  enabled: true
+  model_name: yolov8n.pt
+  confidence_threshold: 0.35
+  person_class_id: 0
+
+pose:
+  backend: yolo
+  model_name: yolov8n-pose.pt
+  confidence_threshold: 0.25
+
+segmentation:
+  backend: dummy
+  model_name: null
+  road_class_id: 1
+  sidewalk_class_id: 2
+  threshold: 0.5
+
+features:
+  label_default: 0
+  road_distance_scale: 1.0
+
+training:
+  target_column: label
+  test_size: 0.2
+  random_state: 42
+  sequence_length: 8
+  batch_size: 16
+  epochs: 3
+  learning_rate: 0.001
+  lstm_hidden_size: 64
+  lstm_num_layers: 1
+
+experiments:
+  feature_sets:
+    pose_only:
+      - center_x
+      - center_y
+      - left_ankle_x
+      - left_ankle_y
+      - right_ankle_x
+      - right_ankle_y
+      - body_direction
+      - step_direction
+    pose_road_relation:
+      - center_x
+      - center_y
+      - left_ankle_x
+      - left_ankle_y
+      - right_ankle_x
+      - right_ankle_y
+      - body_direction
+      - step_direction
+      - distance_to_road
+      - foot_on_road
+      - center_on_road
+      - approach_rate

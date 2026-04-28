@@ -1,0 +1,62 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual environments
+.venv/
+.venv*/
+venv/
+env/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Environment variables
+.env
+.env.*
+
+# Dataset files: keep directory structure only
+data/raw/*
+data/videos/*
+data/annotations/*
+data/processed/*
+data/features/*
+!data/raw/.gitkeep
+!data/videos/.gitkeep
+!data/annotations/.gitkeep
+!data/processed/.gitkeep
+!data/features/.gitkeep
+
+# Model weights and trained classifiers
+models/pose/*
+models/segmentation/*
+models/classifiers/*
+!models/pose/.gitkeep
+!models/segmentation/.gitkeep
+!models/classifiers/.gitkeep
+*.pt
+*.pth
+*.onnx
+*.joblib
+*.pkl
+
+# Outputs
+outputs/logs/*
+outputs/figures/*
+outputs/results/*
+outputs/matplotlib_cache/
+!outputs/logs/.gitkeep
+!outputs/figures/.gitkeep
+!outputs/results/.gitkeep
+
+# Notebooks checkpoints
+.ipynb_checkpoints/

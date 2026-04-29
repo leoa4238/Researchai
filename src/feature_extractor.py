@@ -42,6 +42,7 @@ class FeatureExtractor:
         detections: list[Detection],
         poses: dict[int, PoseResult],
         segmentation: SegmentationResult,
+        labels_by_id: dict[int, int] | None = None,
     ) -> list[dict[str, float | int]]:
         rows: list[dict[str, float | int]] = []
         for det in detections:
@@ -84,7 +85,7 @@ class FeatureExtractor:
                     "foot_on_road": foot_on_road,
                     "center_on_road": center_on_road,
                     "approach_rate": approach_rate,
-                    "label": self.label_default,
+                    "label": labels_by_id.get(det.pedestrian_id, self.label_default) if labels_by_id else self.label_default,
                 }
             )
         return rows

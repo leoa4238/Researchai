@@ -9,18 +9,30 @@ paths:
   processed_dir: data/processed
   feature_dir: data/features
   pose_model_dir: models/pose
+  yolo_model_dir: models/yolo
   segmentation_model_dir: models/segmentation
   classifier_model_dir: models/classifiers
   log_dir: outputs/logs
   figure_dir: outputs/figures
   result_dir: outputs/results
+  report_dir: outputs/reports
   input_video: data/videos/sample.mp4
   feature_csv: data/features/features.csv
+  jaad_feature_csv: data/features/jaad_features.csv
   dummy_feature_csv: data/features/dummy_features.csv
+
+jaad:
+  annotation_root: data/raw/JAAD_annotations
+  video_dir: data/raw/JAAD/JAAD_clips
+  feature_csv: data/features/jaad_features.csv
+  sample_type: beh
+  split_subset: all_videos
+  limit_videos: null
+  pose_backend: yolo
 
 video:
   frame_stride: 5
-  max_frames: 100
+  max_frames: null
 
 detection:
   enabled: true
@@ -30,8 +42,9 @@ detection:
 
 pose:
   backend: yolo
-  model_name: yolov8n-pose.pt
+  model_path: models/yolo/yolov8n-pose.pt
   confidence_threshold: 0.25
+  inference_mode: bbox
 
 segmentation:
   backend: dummy
@@ -45,6 +58,7 @@ features:
   road_distance_scale: 1.0
 
 training:
+  split_strategy: official
   target_column: label
   test_size: 0.2
   random_state: 42
@@ -57,6 +71,14 @@ training:
 
 experiments:
   feature_sets:
+    bbox_only:
+      - center_x
+      - center_y
+    road_relation_only:
+      - distance_to_road
+      - foot_on_road
+      - center_on_road
+      - approach_rate
     pose_only:
       - center_x
       - center_y

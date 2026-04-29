@@ -49,11 +49,13 @@ class Config:
             "paths.processed_dir",
             "paths.feature_dir",
             "paths.pose_model_dir",
+            "paths.yolo_model_dir",
             "paths.segmentation_model_dir",
             "paths.classifier_model_dir",
             "paths.log_dir",
             "paths.figure_dir",
             "paths.result_dir",
+            "paths.report_dir",
         ]
         for key in directory_keys:
             self.path(key).mkdir(parents=True, exist_ok=True)

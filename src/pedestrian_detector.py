@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import os
+from pathlib import Path
 from typing import Any
 
 import cv2
@@ -34,6 +36,9 @@ class PedestrianDetector:
     def _load_model(self) -> None:
         """ultralytics가 설치되어 있으면 실제 YOLO 모델을 로드합니다."""
         try:
+            yolo_config_dir = Path("outputs/ultralytics").resolve()
+            yolo_config_dir.mkdir(parents=True, exist_ok=True)
+            os.environ.setdefault("YOLO_CONFIG_DIR", str(yolo_config_dir))
             from ultralytics import YOLO
 
             self.model = YOLO(self.model_name)

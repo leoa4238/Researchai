@@ -17,6 +17,7 @@ QUALITY_FEATURE_COLUMNS = [
     "approach_rate",
     "foot_on_road",
     "center_on_road",
+    "road_pixel_ratio",
 ]
 
 
@@ -48,6 +49,25 @@ def generate_jaad_quality_report(config: Config, csv_path: str | Path | None = N
         for label, count in data["label"].value_counts(dropna=False).sort_index().items():
             add("label_distribution", "count", int(count), video_id=str(label))
             add("label_distribution", "ratio", float(count / total) if total else 0.0, video_id=str(label))
+
+    for column in ("traffic_light_present", "traffic_light_state", "risk_label"):
+        if column in data.columns:
+            total = len(data)
+            for value, count in data[column].value_counts(dropna=False).sort_index().items():
+                add(f"{column}_distribution", "count", int(count), video_id=str(value))
+                add(f"{column}_distribution", "ratio", float(count / total) if total else 0.0, video_id=str(value))
+
+    for column in ("segmentation_backend", "segmentation_backend_requested", "segmentation_source", "segmentation_fallback"):
+        if column in data.columns:
+            total = len(data)
+            for value, count in data[column].value_counts(dropna=False).sort_index().items():
+                add(f"{column}_distribution", "count", int(count), video_id=str(value))
+                add(f"{column}_distribution", "ratio", float(count / total) if total else 0.0, video_id=str(value))
+
+    if "risk_label" in data.columns:
+        invalid_count = int(data["risk_label"].eq(-1).sum())
+        add("risk_label_quality", "invalid_minus_one_count", invalid_count)
+        add("risk_label_quality", "trainable_rows", int(data["risk_label"].ne(-1).sum()))
 
     if "video_id" in data.columns:
         for video_id, count in data["video_id"].value_counts().sort_index().items():
@@ -88,6 +108,9 @@ def validate_before_training(
     missing_columns = [column for column in [*feature_columns, target_column] if column not in data.columns]
     if missing_columns:
         raise ValueError(f"Missing required columns: {missing_columns}")
+
+    if len(data) == 0:
+        raise ValueError("Training aborted: no rows available after target filtering.")
 
     labels = data[target_column].dropna().astype(int)
     if labels.nunique() < 2:
@@ -182,6 +205,40 @@ def _quality_summary_text(data: pd.DataFrame, overlaps: dict[str, set[str]]) -> 
         total = len(data)
         for label, count in data["label"].value_counts().sort_index().items():
             lines.append(f"- {label}: {count} ({count / total:.4f})")
+    if "traffic_light_present" in data.columns:
+        lines.append("")
+        lines.append("Traffic light present distribution:")
+        total = len(data)
+        for value, count in data["traffic_light_present"].value_counts().sort_index().items():
+            lines.append(f"- {value}: {count} ({count / total:.4f})")
+    if "traffic_light_state" in data.columns:
+        lines.append("")
+        lines.append("Traffic light state distribution:")
+        total = len(data)
+        for value, count in data["traffic_light_state"].value_counts().sort_index().items():
+            lines.append(f"- {value}: {count} ({count / total:.4f})")
+    if "risk_label" in data.columns:
+        lines.append("")
+        lines.append("Risk label distribution:")
+        total = len(data)
+        for value, count in data["risk_label"].value_counts().sort_index().items():
+            lines.append(f"- {value}: {count} ({count / total:.4f})")
+        lines.append(f"Risk label -1 count: {int(data['risk_label'].eq(-1).sum())}")
+        lines.append(f"Risk label trainable rows: {int(data['risk_label'].ne(-1).sum())}")
+    if "segmentation_backend" in data.columns:
+        lines.append("")
+        lines.append("Segmentation backend distribution:")
+        for value, count in data["segmentation_backend"].value_counts().sort_index().items():
+            lines.append(f"- {value}: {count}")
+    if "segmentation_source" in data.columns:
+        lines.append("")
+        lines.append("Segmentation source distribution:")
+        for value, count in data["segmentation_source"].value_counts().sort_index().items():
+            lines.append(f"- {value}: {count}")
+    if "segmentation_fallback" in data.columns:
+        lines.append(f"Segmentation fallback rows: {int(data['segmentation_fallback'].astype(int).sum())}")
+    if "road_pixel_ratio" in data.columns:
+        lines.append(f"Average road pixel ratio: {pd.to_numeric(data['road_pixel_ratio'], errors='coerce').mean():.4f}")
     lines.append("")
     lines.append("Split video overlap:")
     for name, ids in overlaps.items():

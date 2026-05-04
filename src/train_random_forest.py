@@ -18,9 +18,14 @@ def train_random_forest(
     csv_path: str | Path,
     feature_set_name: str = "pose_road_relation",
     split_strategy: str | None = None,
+    target_column: str | None = None,
 ) -> dict[str, float | int | list[list[int]]]:
     data = pd.read_csv(csv_path)
-    target_column = config.get("training.target_column", "label")
+    target_column = target_column or config.get("training.target_column", "label")
+    if target_column == "risk_label":
+        before = len(data)
+        data = data[data[target_column].ne(-1)].copy()
+        print(f"[target] risk_label: excluded {before - len(data)} rows with -1; trainable rows={len(data)}")
     feature_columns = config.get(f"experiments.feature_sets.{feature_set_name}")
     if feature_columns is None:
         raise KeyError(f"Unknown feature set: {feature_set_name}")
@@ -60,9 +65,10 @@ def train_random_forest(
     metrics["train_rows"] = int(len(x_train))
     metrics["test_rows"] = int(len(x_test))
 
-    model_path = config.path("paths.classifier_model_dir") / f"random_forest_{feature_set_name}.joblib"
-    result_path = config.path("paths.result_dir") / f"random_forest_{feature_set_name}_metrics.json"
-    figure_path = config.path("paths.figure_dir") / f"random_forest_{feature_set_name}_confusion_matrix.png"
+    suffix = target_column if target_column != "label" else "crossing"
+    model_path = config.path("paths.classifier_model_dir") / f"random_forest_{feature_set_name}_{suffix}.joblib"
+    result_path = config.path("paths.result_dir") / f"random_forest_{feature_set_name}_{suffix}_metrics.json"
+    figure_path = config.path("paths.figure_dir") / f"random_forest_{feature_set_name}_{suffix}_confusion_matrix.png"
 
     model_path.parent.mkdir(parents=True, exist_ok=True)
     result_path.parent.mkdir(parents=True, exist_ok=True)

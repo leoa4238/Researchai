@@ -17,6 +17,15 @@ from src.road_segmenter import RoadSegmenter
 from src.video_reader import VideoReader
 
 
+SEGMENTATION_METADATA_COLUMNS = [
+    "segmentation_backend",
+    "segmentation_backend_requested",
+    "segmentation_source",
+    "segmentation_fallback",
+    "road_pixel_ratio",
+]
+
+
 def build_feature_dataset(config: Config, video_path: str | Path | None = None, output_csv: str | Path | None = None) -> Path:
     """영상 입력부터 검출, pose, segmentation, feature CSV 저장까지 실행합니다."""
     input_video = Path(video_path) if video_path else config.path("paths.input_video")
@@ -39,22 +48,22 @@ def build_feature_dataset(config: Config, video_path: str | Path | None = None, 
         confidence_threshold=config.get("pose.confidence_threshold", 0.25),
         inference_mode=config.get("pose.inference_mode", "bbox"),
     )
-    segmenter = RoadSegmenter(
-        backend=config.get("segmentation.backend", "dummy"),
-        model_name=config.get("segmentation.model_name"),
-        threshold=config.get("segmentation.threshold", 0.5),
-    )
+    segmenter = _make_road_segmenter(config)
     feature_extractor = FeatureExtractor(label_default=config.get("features.label_default", 0))
 
-    rows: list[dict[str, float | int]] = []
+    rows: list[dict[str, float | int | str]] = []
     for frame_id, frame in tqdm(reader, desc="feature extraction"):
         detections = detector.detect(frame)
-        poses = pose_extractor.extract(frame, detections)
-        segmentation = segmenter.segment(frame)
-        rows.extend(feature_extractor.extract(frame_id, detections, poses, segmentation))
+        poses = pose_extractor.extract(frame, detections, frame_id=frame_id)
+        segmentation = segmenter.segment(frame, frame_id=frame_id)
+        segmentation_metadata = segmenter.row_metadata(segmentation)
+        for row in feature_extractor.extract(frame_id, detections, poses, segmentation):
+            row.update(segmentation_metadata)
+            rows.append(row)
 
-    frame = pd.DataFrame(rows, columns=FEATURE_COLUMNS)
+    frame = pd.DataFrame(rows, columns=[*FEATURE_COLUMNS, *SEGMENTATION_METADATA_COLUMNS])
     frame.to_csv(output_path, index=False, encoding="utf-8-sig")
+    _write_segmentation_reports(config, segmenter)
     return output_path
 
 
@@ -85,11 +94,7 @@ def build_jaad_feature_dataset(
         confidence_threshold=config.get("pose.confidence_threshold", 0.25),
         inference_mode=config.get("pose.inference_mode", "bbox"),
     )
-    segmenter = RoadSegmenter(
-        backend=config.get("segmentation.backend", "dummy"),
-        model_name=config.get("segmentation.model_name"),
-        threshold=config.get("segmentation.threshold", 0.5),
-    )
+    segmenter = _make_road_segmenter(config)
     feature_extractor = FeatureExtractor(label_default=config.get("features.label_default", 0))
 
     rows: list[dict[str, float | int | str | None]] = []
@@ -97,6 +102,7 @@ def build_jaad_feature_dataset(
     for video_id in tqdm(selected_video_ids, desc="JAAD videos"):
         try:
             annotations = loader.load_video(video_id)
+            traffic_by_frame = loader.load_traffic_by_frame(video_id)
             split = split_map.get(video_id)
             if split is None:
                 print(f"[JAAD split] skipping {video_id}: not found in official split files")
@@ -117,8 +123,9 @@ def build_jaad_feature_dataset(
                 detections = _detections_from_jaad_boxes(jaad_boxes, frame.shape[:2], annotations.original_size)
                 labels_by_id = {box.pedestrian_id: box.label for box in jaad_boxes}
                 metadata_by_id = {box.pedestrian_id: box for box in jaad_boxes}
-                poses = pose_extractor.extract(frame, detections)
-                segmentation = segmenter.segment(frame)
+                poses = pose_extractor.extract(frame, detections, video_id=video_id, frame_id=frame_id)
+                segmentation = segmenter.segment(frame, video_id=video_id, frame_id=frame_id)
+                segmentation_metadata = segmenter.row_metadata(segmentation)
 
                 for row in feature_extractor.extract(frame_id, detections, poses, segmentation, labels_by_id):
                     metadata = metadata_by_id[int(row["pedestrian_id"])]
@@ -132,6 +139,20 @@ def build_jaad_feature_dataset(
                             "occlusion": metadata.occlusion,
                         }
                     )
+                    row.update(segmentation_metadata)
+                    traffic_context = loader.frame_traffic_context(
+                        traffic_by_frame,
+                        int(row["frame_id"]),
+                        int(row["label"]),
+                    )
+                    row.update(
+                        {
+                            "traffic_light_present": traffic_context.traffic_light_present,
+                            "traffic_light_state": traffic_context.traffic_light_state,
+                            "traffic_light_state_code": traffic_context.traffic_light_state_code,
+                            "risk_label": traffic_context.risk_label,
+                        }
+                    )
                     rows.append(row)
         except Exception as exc:
             message = f"{video_id}\t{type(exc).__name__}: {exc}"
@@ -140,7 +161,20 @@ def build_jaad_feature_dataset(
             continue
 
     frame = pd.DataFrame(rows)
-    columns = ["video_id", "split", "source_pedestrian_id", "action", "look", "occlusion", *FEATURE_COLUMNS]
+    columns = [
+        "video_id",
+        "split",
+        "source_pedestrian_id",
+        "action",
+        "look",
+        "occlusion",
+        *FEATURE_COLUMNS,
+        "traffic_light_present",
+        "traffic_light_state",
+        "traffic_light_state_code",
+        "risk_label",
+        *SEGMENTATION_METADATA_COLUMNS,
+    ]
     frame = frame.reindex(columns=columns)
     frame.to_csv(output_path, index=False, encoding="utf-8-sig")
     failed_log_path.write_text(
@@ -148,8 +182,58 @@ def build_jaad_feature_dataset(
         encoding="utf-8",
     )
     print(f"[JAAD] failed videos: {len(failed_videos)}; log saved: {failed_log_path}")
+    report_dir = config.path("paths.report_dir")
+    pose_extractor.write_quality_report(
+        report_dir / "pose_detection_report.csv",
+        report_dir / "pose_detection_summary.txt",
+        report_dir / "pose_detection_events.csv",
+    )
+    inference_mode = config.get("pose.inference_mode", "bbox")
+    pose_extractor.write_quality_report(
+        report_dir / f"pose_detection_report_yolo_{inference_mode}.csv",
+        report_dir / f"pose_detection_summary_yolo_{inference_mode}.txt",
+        report_dir / f"pose_detection_events_yolo_{inference_mode}.csv",
+    )
+    _write_segmentation_reports(config, segmenter)
     generate_jaad_quality_report(config, output_path)
     return output_path
+
+
+def _make_road_segmenter(config: Config) -> RoadSegmenter:
+    return RoadSegmenter(
+        backend=config.get("segmentation.backend", "dummy"),
+        model_name=config.get("segmentation.model_name"),
+        model_path=config.path("segmentation.model_path") if config.get("segmentation.model_path") else None,
+        threshold=config.get("segmentation.threshold", 0.5),
+        road_class_ids=_config_list(config, "segmentation.road_class_ids", config.get("segmentation.road_class_id", 0)),
+        sidewalk_class_ids=_config_list(config, "segmentation.sidewalk_class_ids", config.get("segmentation.sidewalk_class_id", 1)),
+        road_class_names=config.get("segmentation.road_class_names", ["road"]),
+        sidewalk_class_names=config.get("segmentation.sidewalk_class_names", ["sidewalk"]),
+        num_classes=config.get("segmentation.num_classes", 19),
+        device=config.get("segmentation.device", "auto"),
+    )
+
+
+def _config_list(config: Config, key: str, fallback: int | list[int]) -> list[int]:
+    value = config.get(key)
+    if value is None:
+        value = fallback
+    if isinstance(value, list):
+        return [int(item) for item in value]
+    return [int(value)]
+
+
+def _write_segmentation_reports(config: Config, segmenter: RoadSegmenter) -> None:
+    report_dir = config.path("paths.report_dir")
+    segmenter.write_quality_report(
+        report_dir / "road_segmentation_report.csv",
+        report_dir / "road_segmentation_summary.txt",
+    )
+    backend = config.get("segmentation.backend", "dummy").lower().replace("-", "_")
+    segmenter.write_quality_report(
+        report_dir / f"road_segmentation_report_{backend}.csv",
+        report_dir / f"road_segmentation_summary_{backend}.txt",
+    )
 
 
 def _detections_from_jaad_boxes(

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import Path
 import xml.etree.ElementTree as ET
 
+from src.traffic_annotations import TrafficFrameContext, make_risk_label, normalize_traffic_light_state
+
 
 @dataclass(frozen=True)
 class JaadBox:
@@ -29,6 +31,7 @@ class JaadAnnotationLoader:
     def __init__(self, annotation_root: str | Path, sample_type: str = "beh") -> None:
         self.annotation_root = Path(annotation_root)
         self.annotation_dir = self.annotation_root / "annotations"
+        self.traffic_dir = self.annotation_root / "annotations_traffic"
         self.sample_type = sample_type
         if not self.annotation_dir.exists():
             raise FileNotFoundError(f"JAAD annotations folder not found: {self.annotation_dir}")
@@ -116,6 +119,46 @@ class JaadAnnotationLoader:
                 boxes_by_frame.setdefault(frame_id, []).append(jaad_box)
 
         return JaadVideoAnnotations(video_id=video_id, original_size=original_size, boxes_by_frame=boxes_by_frame)
+
+    def load_traffic_by_frame(self, video_id: str) -> dict[int, dict[str, str | int]]:
+        xml_path = self.traffic_dir / f"{video_id}_traffic.xml"
+        if not xml_path.exists():
+            return {}
+
+        root = ET.parse(xml_path).getroot()
+        traffic_by_frame: dict[int, dict[str, str | int]] = {}
+        for frame in root.findall("frame"):
+            frame_id = int(frame.attrib["id"])
+            present, state, state_code = normalize_traffic_light_state(frame.attrib.get("traffic_light"))
+            traffic_by_frame[frame_id] = {
+                "traffic_light_present": present,
+                "traffic_light_state": state,
+                "traffic_light_state_code": state_code,
+                "ped_crossing": frame.attrib.get("ped_crossing", ""),
+                "ped_sign": frame.attrib.get("ped_sign", ""),
+                "stop_sign": frame.attrib.get("stop_sign", ""),
+            }
+        return traffic_by_frame
+
+    @staticmethod
+    def frame_traffic_context(
+        traffic_by_frame: dict[int, dict[str, str | int]],
+        frame_id: int,
+        crossing_label: int,
+    ) -> TrafficFrameContext:
+        raw = traffic_by_frame.get(frame_id)
+        if raw is None:
+            present, state, state_code = 0, "unknown", 0
+        else:
+            present = int(raw.get("traffic_light_present", 0))
+            state = str(raw.get("traffic_light_state", "unknown"))
+            state_code = int(raw.get("traffic_light_state_code", 0))
+        return TrafficFrameContext(
+            traffic_light_present=present,
+            traffic_light_state=state,
+            traffic_light_state_code=state_code,
+            risk_label=make_risk_label(crossing_label, state),
+        )
 
     @staticmethod
     def _attributes(box: ET.Element) -> dict[str, str]:

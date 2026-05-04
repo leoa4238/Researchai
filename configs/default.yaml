@@ -47,10 +47,25 @@ pose:
   inference_mode: bbox
 
 segmentation:
+  # Supported backends: dummy, deeplabv3, segformer, yolo_seg
   backend: dummy
-  model_name: null
-  road_class_id: 1
-  sidewalk_class_id: 2
+  model_name: nvidia/segformer-b2-finetuned-cityscapes-1024-1024
+  model_path: null
+  device: auto
+  num_classes: 19
+  road_class_ids:
+    - 0
+  sidewalk_class_ids:
+    - 1
+  road_class_names:
+    - road
+    - street
+  sidewalk_class_names:
+    - sidewalk
+    - pavement
+  # Backward-compatible single-class settings. Prefer *_class_ids above.
+  road_class_id: 0
+  sidewalk_class_id: 1
   threshold: 0.5
 
 features:
@@ -101,3 +116,18 @@ experiments:
       - foot_on_road
       - center_on_road
       - approach_rate
+    pose_road_signal:
+      - center_x
+      - center_y
+      - left_ankle_x
+      - left_ankle_y
+      - right_ankle_x
+      - right_ankle_y
+      - body_direction
+      - step_direction
+      - distance_to_road
+      - foot_on_road
+      - center_on_road
+      - approach_rate
+      - traffic_light_present
+      - traffic_light_state_code
